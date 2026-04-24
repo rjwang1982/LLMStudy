@@ -169,6 +169,113 @@ if len(chunks_yes) >= 2:
     print("\n→ 重叠确保了跨块的信息不会丢失！")
 
 # ============================================================
+# 6. 实战案例：公司手册 — 为什么必须分块？
+# ============================================================
+print("\n" + "=" * 50)
+print("6. 实战案例：公司手册")
+print("=" * 50)
+
+print("""
+场景: 你有一份公司员工手册，包含请假、报销、绩效、出差四个章节。
+用户问: "出差补贴标准是多少？"
+
+如果整篇文档压成一个向量会怎样？
+""")
+
+company_handbook = """
+第一章：请假制度
+
+员工请假需提前 3 个工作日提交申请。年假按工龄计算：1-5 年 5 天，5-10 年 10 天，10 年以上 15 天。病假需提供医院证明，每年累计不超过 30 天。事假每月不超过 3 天，需部门主管审批。婚假 3 天，产假按国家规定执行。
+
+第二章：报销流程
+
+报销需在费用发生后 30 天内提交。差旅费、办公用品、培训费用均可报销。报销金额 500 元以下由部门主管审批，500-5000 元需总监审批，5000 元以上需 VP 审批。报销时需提供正规发票和费用明细。电子发票需打印后粘贴在报销单上。
+
+第三章：绩效考核
+
+绩效考核每季度进行一次，采用 OKR + 360 度评估相结合的方式。考核结果分为 S/A/B/C/D 五个等级。S 级占比不超过 10%，D 级需进入绩效改进计划（PIP）。年终奖金与全年绩效挂钩，S 级 4 个月，A 级 3 个月，B 级 2 个月。
+
+第四章：出差规定
+
+出差需提前 5 个工作日提交出差申请。出差补贴标准：一线城市每天 200 元，二线城市每天 150 元，三线及以下城市每天 100 元。住宿标准：一线城市不超过 500 元/晚，二线城市不超过 350 元/晚。机票经济舱，高铁二等座。出差期间的餐费包含在补贴中，不再单独报销。出差超过 7 天需总监审批。
+""".strip()
+
+print(f"公司手册总长度: {len(company_handbook)} 字符")
+print(f"包含 4 个章节: 请假、报销、绩效、出差\n")
+
+# 方案 A: 不分块，整篇做 Embedding
+print("--- 方案 A: 不分块（整篇文档 → 1 个向量）---")
+print("""
+  整篇手册 → [0.3, 0.25, 0.1, ...]
+  → 一个"啥都像又啥都不像"的模糊向量
+  → 用户问"出差补贴"，但"出差"只占四分之一，被其他话题稀释
+  → 相似度不高，检索效果差 ❌
+""")
+
+# 方案 B: 按章节分块
+print("--- 方案 B: 按章节分块（4 个 chunk → 4 个向量）---")
+
+splitter_handbook = RecursiveCharacterTextSplitter(
+    chunk_size=500,
+    chunk_overlap=0,
+    separators=["\n\n", "\n", "。", " ", ""],
+)
+
+handbook_chunks = splitter_handbook.split_text(company_handbook)
+print(f"  分成 {len(handbook_chunks)} 个块:\n")
+
+for i, chunk in enumerate(handbook_chunks):
+    # 提取章节标题
+    first_line = chunk.strip().split("\n")[0]
+    print(f"  Chunk {i+1}: [{first_line}] ({len(chunk)} 字符)")
+
+print("""
+  → 每个 chunk 精准代表一个主题
+  → 用户问"出差补贴"，直接命中"出差规定"那个 chunk ✅
+  → 这就是为什么 Chunking 是 RAG 的第一步！
+""")
+
+# 用 Embedding 实际验证
+print("--- 用 Embedding 实际验证检索效果 ---")
+
+try:
+    from sentence_transformers import SentenceTransformer
+    import numpy as np
+
+    model = SentenceTransformer("all-MiniLM-L6-v2")
+
+    query = "出差补贴标准是多少？"
+    query_vec = model.encode([query])[0]
+
+    # 方案 A: 整篇文档的向量
+    whole_doc_vec = model.encode([company_handbook])[0]
+    sim_whole = np.dot(query_vec, whole_doc_vec) / (
+        np.linalg.norm(query_vec) * np.linalg.norm(whole_doc_vec)
+    )
+
+    # 方案 B: 分块后每个 chunk 的向量
+    chunk_vecs = model.encode(handbook_chunks)
+    sims_chunks = [
+        np.dot(query_vec, cv) / (np.linalg.norm(query_vec) * np.linalg.norm(cv))
+        for cv in chunk_vecs
+    ]
+
+    print(f"\n  查询: '{query}'\n")
+    print(f"  方案 A（整篇）相似度: {sim_whole:.4f}")
+    print(f"  方案 B（分块）相似度:")
+    for i, (chunk, sim) in enumerate(zip(handbook_chunks, sims_chunks)):
+        first_line = chunk.strip().split("\n")[0]
+        marker = " ← 命中！" if sim == max(sims_chunks) else ""
+        bar = "█" * int(sim * 30)
+        print(f"    Chunk {i+1} [{first_line}]: {sim:.4f} {bar}{marker}")
+
+    print(f"\n  结论: 分块后最高相似度 {max(sims_chunks):.4f} > 整篇 {sim_whole:.4f}")
+    print(f"  → 分块让检索精度提升了 {((max(sims_chunks) - sim_whole) / sim_whole * 100):.1f}%！")
+
+except ImportError:
+    print("  (需要 sentence-transformers，跳过实际验证)")
+
+# ============================================================
 # 总结
 # ============================================================
 print("\n" + "=" * 50)
@@ -182,6 +289,9 @@ print("""
 5. 分块后检查质量：每块是否语义完整
 
 分块质量直接影响 RAG 的检索效果！
+
+📖 延伸阅读: 同目录下的 "RAG_and_Fine-tuning_学习指南.md"
+   包含 RAG 和微调的完整原理讲解、常见疑问解答和选型决策树。
 """)
 
 print("✅ 文本分块策略练习完成！")

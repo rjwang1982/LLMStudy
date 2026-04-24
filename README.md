@@ -306,7 +306,8 @@ LLMStudy/
 │   ├── 05_rag/
 │   │   ├── 01_text_splitting.py
 │   │   ├── 02_vector_store.py
-│   │   └── 03_rag_pipeline.py          ← 接 oLMX 本地 LLM
+│   │   ├── 03_rag_pipeline.py          ← 接 oLMX 本地 LLM
+│   │   └── RAG_and_Fine-tuning_学习指南.md  ← 补充阅读
 │   ├── 06_model_compression/
 │   │   ├── 01_quantization.py
 │   │   └── 02_distillation.py
